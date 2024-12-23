@@ -4,6 +4,10 @@ using TMPro;
 using System;
 using System.Collections;
 using System.IO;
+using Melanchall.DryWetMidi.Multimedia;
+using Melanchall.DryWetMidi.Core;
+using Melanchall.DryWetMidi.MusicTheory;
+
 
 public class GameManager : MonoBehaviour
 {
@@ -12,15 +16,18 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI linkText;
     public TMP_InputField inputField;
 
+    private IInputDevice inputDevice;
+
     [SerializeField] private string url;
 
     private bool leftControlKeyPressed;
     private bool insertKeyPressed;
     private bool messageSent;
+    private bool midiRecived;
 
     private void Awake()
     {
-        if(instance == null)
+        if (instance == null)
         {
             instance = this;
         }
@@ -35,7 +42,7 @@ public class GameManager : MonoBehaviour
         warningText.text = string.Empty;
         SaveLoadData.Load();
         CheckUrlText();
-        
+        MidiSetup();
     }
 
     // Update is called once per frame
@@ -43,6 +50,12 @@ public class GameManager : MonoBehaviour
     {
         InputManager();
         CompareCheck();
+
+        if(midiRecived)
+        {
+            StartCoroutine(CheckURL());
+            midiRecived = false;
+        }
     }
 
 
@@ -80,7 +93,7 @@ public class GameManager : MonoBehaviour
     //User interaction ---------------------------------------------------------------------------------------
     public void IncomingUserText()
     {
-       
+
         //On input field events this scripted attached to { On End Edit (String) [defaults to keypad enter] }
         url = inputField.text;
         CheckUrlText();
@@ -100,17 +113,53 @@ public class GameManager : MonoBehaviour
         }
     }
 
-
-
     //Connect to web ----------------------------------------------------------------------------------------------
     private void OpenWebsite()
     {
-        if(string.IsNullOrEmpty(url))
+        if (string.IsNullOrEmpty(url))
         {
             WarningTextSetUp("URL cannot be empty.");
             return;
         }
         StartCoroutine(CheckURL());
+    }
+
+    //Midi logic ------------------------------------------------------------------------------------------------
+
+    private void MidiSetup()
+    {
+        inputDevice = InputDevice.GetByIndex(0);
+        inputDevice.EventReceived += OnMidiEventReceived;
+        inputDevice.StartEventsListening();
+    }
+    private void OnMidiEventReceived(object sender, MidiEventReceivedEventArgs e)
+    {
+        var midiEvent = (MidiDevice)sender;
+        Debug.Log($"Received MIDI event: '{midiEvent}' at {DateTime.Now}: {e.Event}");
+        if(e.Event is NoteOnEvent noteOnEvent)
+        {
+            TriggerMidiFunction(noteOnEvent.NoteNumber);
+        }
+    }
+
+    private void TriggerMidiFunction(int noteNumber)
+    {
+        Debug.Log(noteNumber);
+        if (noteNumber > 0)
+        {
+            midiRecived = true;
+        }
+    }
+  
+    private void OnDestroy()
+    {
+        if (inputDevice != null)
+        {
+            inputDevice.EventReceived -= OnMidiEventReceived;
+            inputDevice.StopEventsListening();
+            inputDevice.Dispose();
+            inputDevice = null;
+        }
     }
 
     //Timer ------------------------------------------------------------------------------------------------------
@@ -119,7 +168,7 @@ public class GameManager : MonoBehaviour
         using (UnityWebRequest request = UnityWebRequest.Head(url))
         {
             yield return request.SendWebRequest();
-            if(request.result == UnityWebRequest.Result.Success)
+            if (request.result == UnityWebRequest.Result.Success)
             {
                 Application.OpenURL(url);
             }
@@ -146,12 +195,12 @@ public class GameManager : MonoBehaviour
     {
         yield return new WaitForSeconds(i);
         warningText.text = string.Empty;
-        messageSent = false;    
-        
+        messageSent = false;
+
     }
 
     //Save Data --------------------------------------------------------------------
-   public void SaveData(ref GameManagerSaveData saveData)
+    public void SaveData(ref GameManagerSaveData saveData)
     {
         saveData.linkSave = url;
     }
